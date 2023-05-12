@@ -1,0 +1,84 @@
+version: "3.4"
+
+# docker run -t --name storagebroker --net=host \
+#--entrypoint "storage_broker" \
+#perconalab/neon:latest -l 0.0.0.0:50051
+#```
+#
+#2. Deploy safekeeper (or several of them for redundancy)
+#
+#```shell
+#docker run -t --name safekeeper1 --net=host \
+#--entrypoint "safekeeper" \
+#perconalab/neon:latest \
+#--id=1 -D /data --broker-endpoint=http://172.16.0.9:50051 \
+#-l 0.0.0.0:5454 --listen-http=0.0.0.0:7676
+#
+
+
+# docker run -d -t --name pageserver --net=host
+#--entrypoint "pageserver"
+#perconalab/neon:latest
+#-D /data -c "id=1" -c "broker_endpoint='http://172.16.0.9:50051'"
+#-c "listen_pg_addr='0.0.0.0:6400'" -c "listen_http_addr='0.0.0.0:9898'"
+#-c "pg_distrib_dir='/opt/neondatabase-neon/pg_install'"
+
+# docker run -d -t --name compute
+#--entrypoint "/compute.sh"
+#-p55432:55432 -e PAGESERVER=172.16.0.9
+#-e SAFEKEEPERS=172.16.0.9:5454 perconalab/neon:latest
+
+services:
+  storage-broker:
+    image: perconalab/neon:latest
+    entrypoint: storage_broker
+    command:
+      - -l
+      - 0.0.0.0:50051
+
+  safe-keeper:
+    image: perconalab/neon:latest
+    entrypoint: safekeeper
+    command:
+      - --id=1
+      - -D
+      - /data
+      - --broker-endpoint=http://storage-broker:50051
+      - -l
+      - localhost:5454
+      - --listen-http=0.0.0.0:7676
+    depends_on:
+      - storage-broker
+
+  page-server:
+    image: perconalab/neon:latest
+    entrypoint: pageserver
+    command:
+      - -D
+      - /data
+      - -c
+      - id=1
+      - -c
+      - "broker_endpoint='http://storage-broker:50051'"
+      - -c
+      - "listen_pg_addr='0.0.0.0:6400'"
+      - -c
+      - "listen_http_addr='0.0.0.0:9898'"
+      - -c
+      - "pg_distrib_dir='/opt/neondatabase-neon/pg_install'"
+    depends_on:
+      - storage-broker
+
+  compute:
+    image: perconalab/neon:latest
+    entrypoint: /compute.sh
+    command:
+      - -e
+      - PAGESERVER=page-server
+      - -e
+      - SAFEKEEPERS=safe-keeper:5454
+    depends_on:
+      - page-server
+      - safe-keeper
+    ports:
+      - 55432:55432
